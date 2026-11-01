@@ -1,0 +1,162 @@
+name: insurelake
+
+x-spark-common: &spark-common
+  image: tabulario/spark-iceberg:latest
+  environment:
+    AWS_ACCESS_KEY_ID: minioadmin
+    AWS_SECRET_ACCESS_KEY: minioadmin
+    AWS_REGION: us-east-1
+    AWS_ENDPOINT_URL: http://minio:9000
+    SPARK_HOME: /opt/spark
+  volumes:
+    - ./streaming:/opt/streaming
+    - ./spark:/opt/spark-apps
+    - ./ml/models:/opt/ml-models
+    - ./lakehouse:/opt/lakehouse
+  depends_on:
+    kafka:          { condition: service_healthy }
+    minio:          { condition: service_healthy }
+    iceberg-rest:   { condition: service_started }
+
+services:
+  # ---------- storage ----------
+# append to docker-compose.yml
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-trino:1.8.0
+    profiles: ['tools']
+    working_dir: /usr/app
+    volumes:
+      - ./dbt:/usr/app
+      - ~/.dbt:/root/.dbt
+    environment:
+      DBT_TRINO_HOST: trino
+      DBT_TRINO_PORT: 8080
+      DBT_TRINO_USER: insurelake
+      DBT_TRINO_CATALOG: iceberg
+      DBT_TRINO_SCHEMA: gold
+    depends_on: [trino]
+
+  minio:
+    image: bitnamilegacy/minio:latest
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_DEFAULT_BUCKETS: raw,warehouse,checkpoints,mlflow
+    ports: ['9000:9000', '9001:9001']
+    volumes: [minio_data:/bitnami/minio/data]
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      retries: 20
+
+  minio-init:
+    image: bitnamilegacy/minio-client:latest
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb -p local/raw local/warehouse local/checkpoints local/mlflow || true;
+      mc anonymous set download local/warehouse || true;
+      exit 0;
+      "
+
+  # ---------- messaging ----------
+  kafka:
+    image: bitnamilegacy/kafka:3.7
+    ports: ['29092:29092']
+    environment:
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      ALLOW_PLAINTEXT_LISTENER: 'yes'
+    healthcheck:
+      test: ['CMD', 'kafka-topics.sh', '--bootstrap-server', 'localhost:9092', '--list']
+      interval: 10s
+      retries: 15
+
+  # ---------- lakehouse catalog ----------
+  iceberg-rest:
+    image: tabulario/iceberg-rest:latest
+    ports: ['8181:8181']
+    environment:
+      CATALOG_WAREHOUSE:          s3://warehouse/
+      CATALOG_IO__IMPL:           org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG_S3_ENDPOINT:        http://minio:9000
+      CATALOG_S3_PATH__STYLE__ACCESS: 'true'
+      AWS_ACCESS_KEY_ID:          minioadmin
+      AWS_SECRET_ACCESS_KEY:      minioadmin
+      AWS_REGION:                 us-east-1
+    depends_on:
+      minio: { condition: service_healthy }
+
+  # ---------- compute ----------
+  spark-master:
+    <<: *spark-common
+    hostname: spark-master
+    command: /opt/spark/sbin/start-master.sh
+    ports: ['7077:7077', '8080:8080']
+
+  spark-worker:
+    <<: *spark-common
+    command: /opt/spark/sbin/start-worker.sh spark://spark-master:7077
+    depends_on:
+      spark-master: { condition: service_started }
+
+  spark-submit:                  # `docker compose run --rm spark-submit ...`
+    <<: *spark-common
+    profiles: ['tools']
+    entrypoint: ['/bin/bash']
+
+  # ---------- query ----------
+  trino:
+    image: trinodb/trino:latest
+    ports: ['8088:8080']
+    volumes:
+      - ./infrastructure/trino/catalog:/etc/trino/catalog
+    depends_on:
+      iceberg-rest: { condition: service_started }
+      minio:        { condition: service_healthy }
+
+  # ---------- ml ----------
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.14.1
+    command: >
+      mlflow server
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --serve-artifacts --host 0.0.0.0 --port 5000
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID:      minioadmin
+      AWS_SECRET_ACCESS_KEY:  minioadmin
+      MLFLOW_DEFAULT_ARTIFACT_ROOT: s3://mlflow/
+    ports: ['5000:5000']
+    volumes: [mlflow_data:/mlflow]
+    depends_on:
+      minio: { condition: service_healthy }
+
+  # ---------- api ----------
+  api:
+    build: .
+    command: uvicorn ingestion.api.main:app --host 0.0.0.0 --port 8000
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      MPESA_SHORTCODE: ${MPESA_SHORTCODE:-174379}
+      MPESA_CONSUMER_KEY: ${MPESA_CONSUMER_KEY:-}
+      MPESA_CONSUMER_SECRET: ${MPESA_CONSUMER_SECRET:-}
+      MPESA_PASSKEY: ${MPESA_PASSKEY:-}
+      MPESA_CALLBACK_URL: ${MPESA_CALLBACK_URL:-http://localhost:8000/webhooks/mpesa/callback}
+      MPESA_ENV: ${MPESA_ENV:-sandbox}
+    ports: ['8000:8000']
+    depends_on:
+      kafka: { condition: service_healthy }
+
+volumes:
+  minio_data:
+  mlflow_data:
+

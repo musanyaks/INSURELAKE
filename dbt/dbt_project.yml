@@ -1,0 +1,11 @@
+name: insurelake
+version: '1.0.0'
+profile: insurelake
+model-paths:    ["models"]
+snapshot-paths: ["snapshots"]
+test-paths:     ["tests"]
+models:
+  insurelake:
+    staging:      { +materialized: view }
+    intermediate: { +materialized: table }
+    marts:        { +materialized: table, +tags: ['gold'] }

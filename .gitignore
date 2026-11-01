@@ -1,0 +1,64 @@
+# ---------- python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ---------- node / next ----------
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+.vercel
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ---------- generated data ----------
+data/
+*.duckdb
+*.duckdb.wal
+
+# ---------- model + report artifacts ----------
+ml/models/*.pkl
+ml/models/*.joblib
+*.h5
+governance/quality_report.json
+
+# ---------- secrets ----------
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+*.pem
+*.key
+
+# ---------- editor / os ----------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- logs / scratch ----------
+*.log
+logs/
+scratch/
+tmp/

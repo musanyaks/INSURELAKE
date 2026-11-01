@@ -1,0 +1,8 @@
+version: 2
+sources:
+  - name: iceberg
+    schema: silver
+    tables:
+      - name: claims
+      - name: payments
+      - name: customers

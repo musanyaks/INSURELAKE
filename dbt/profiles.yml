@@ -1,0 +1,12 @@
+insurelake:
+  target: dev
+  outputs:
+    dev:
+      type: trino
+      method: none
+      user: insurelake
+      host: "{{ env_var('DBT_TRINO_HOST', 'localhost') }}"
+      port: 8080
+      catalog: iceberg
+      schema: gold
+      threads: 4

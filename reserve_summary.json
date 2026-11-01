@@ -1,0 +1,32 @@
+{
+  "generated_at": "2026-11-01T02:19:45Z",
+  "triangle_cohorts": 12,
+  "triangle_dev_periods": 12,
+  "a_priori_loss_ratio": 0.7,
+  "cape_cod_loss_ratio": 2.0022,
+  "summary": [
+    {
+      "method": "ChainLadder",
+      "ultimate_total": 380116631.1382,
+      "ibnr_total": 74205311.8982
+    },
+    {
+      "method": "Mack",
+      "ultimate_total": 380116631.1382,
+      "ibnr_total": 74205311.8982,
+      "std_error": 0.4896
+    },
+    {
+      "method": "BornhuetterFerguson",
+      "ultimate_total": 412863858.3377,
+      "ibnr_total": 106952539.0977,
+      "a_priori_lr": 0.7
+    },
+    {
+      "method": "CapeCod",
+      "ultimate_total": 611822638.48,
+      "ibnr_total": 305911319.24,
+      "a_priori_lr": 2.0022
+    }
+  ]
+}
